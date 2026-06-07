@@ -1,0 +1,38 @@
+binance:
+  market_type: spot
+  quote_asset: USDT
+  top_n_symbols: 20
+  symbols:
+    - BTCUSDT
+    - ETHUSDT
+    - ZECUSDT
+    - SOLUSDT
+    - XRPUSDT
+    - WLDUSDT
+    - BNBUSDT
+    - ADAUSDT
+    - DOGEUSDT
+    - TRXUSDT
+    - LINKUSDT
+    - PEPEUSDT
+    - BCHUSDT
+    - LTCUSDT
+    - XLMUSDT
+    - NEARUSDT
+    - SUIUSDT
+    - DOTUSDT
+    - AVAXUSDT
+    - FETUSDT
+  timeframe: 1m
+  start: "2024-01-01T00:00:00Z"
+  end: "2025-12-31T23:59:00Z"
+  sleep_seconds: 0.12
+  limit_per_request: 1000
+  log_every_batches: 50
+  strict_history_coverage: true
+  min_coverage_ratio: 0.995
+  skip_existing: true
+
+paths:
+  raw_dir: "data/raw/binance_1m"
+  logs_dir: "artifacts/logs"

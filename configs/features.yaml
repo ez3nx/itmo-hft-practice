@@ -1,0 +1,20 @@
+targets:
+  horizons: [1, 2, 5, 10, 30]
+  target_prefix: "target_logret_t_"
+
+features:
+  return_lags: [1, 2, 3, 5, 10, 30, 60]
+  volume_lags: [1, 2, 5, 10, 30]
+  rolling_vol_windows: [5, 15, 30, 60]
+  rolling_mean_windows: [5, 15, 30, 60]
+  range_windows: [5, 15, 30]
+
+split:
+  train_start: "2024-01-01T00:00:00Z"
+  train_end: "2025-06-30T23:59:00Z"
+  valid_start: "2025-07-01T00:00:00Z"
+  valid_end: "2025-12-31T23:59:00Z"
+
+paths:
+  raw_dir: "data/raw/binance_1m"
+  processed_dir: "data/processed"
