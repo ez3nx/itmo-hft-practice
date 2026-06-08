@@ -1,0 +1,38 @@
+experiment:
+  name: "quantile_lgbm_multi_horizon"
+  seed: 42
+
+targets:
+  horizons: [1, 2, 5, 10, 30]
+  quantiles: [0.1, 0.5, 0.9]
+
+model:
+  type: "lightgbm"
+  params:
+    num_leaves: 63
+    learning_rate: 0.05
+    min_data_in_leaf: 100
+    feature_fraction: 0.8
+    subsample: 0.8
+    subsample_freq: 1
+    force_col_wise: true
+    n_estimators: 600
+    random_state: 42
+    verbose: -1
+
+runtime:
+  max_train_rows_per_horizon: 2000000
+  max_valid_rows_for_metrics: null
+  train_eval_rows: 300000
+  save_valid_predictions_rows: 500000
+  save_train_eval_predictions: true
+  save_train_eval_predictions_rows: 200000
+  log_evaluation_period: 50
+
+paths:
+  processed_dir: "data/processed"
+  models_dir: "artifacts/models"
+  metrics_dir: "artifacts/metrics"
+  predictions_dir: "artifacts/predictions"
+  plots_dir: "artifacts/plots"
+  logs_dir: "artifacts/logs"
