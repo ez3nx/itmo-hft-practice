@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import time
 from dataclasses import dataclass
@@ -13,7 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
-from chronos import ChronosPipeline
+from chronos import BaseChronosPipeline
 from sklearn.metrics import mean_absolute_error, mean_pinball_loss
 
 LOGGER = logging.getLogger("chronos_eval")
@@ -120,6 +119,45 @@ def even_sample(df: pd.DataFrame, n: int) -> pd.DataFrame:
     return df.iloc[idx].copy()
 
 
+def quantiles_to_numpy(q_output: Any) -> np.ndarray:
+    """
+    Normalize outputs of predict_quantiles to shape:
+    [batch, prediction_length, num_quantiles]
+    Supports Chronos v1 (tensor output) and Chronos-2 (list output).
+    """
+    if isinstance(q_output, torch.Tensor):
+        arr = q_output.detach().cpu().numpy()
+        if arr.ndim != 3:
+            raise ValueError(f"Unexpected tensor shape from predict_quantiles: {arr.shape}")
+        return arr
+
+    if isinstance(q_output, list):
+        rows: list[np.ndarray] = []
+        for item in q_output:
+            if isinstance(item, torch.Tensor):
+                arr = item.detach().cpu().numpy()
+            else:
+                arr = np.asarray(item)
+
+            # Chronos-2 typically returns per-item shape (n_variates, horizon, n_quantiles).
+            if arr.ndim == 3:
+                if arr.shape[0] != 1:
+                    raise ValueError(
+                        "Multivariate outputs are not expected in this script. "
+                        f"Got shape={arr.shape} for one forecast item."
+                    )
+                arr = arr[0]
+            if arr.ndim != 2:
+                raise ValueError(f"Unexpected per-item quantile shape: {arr.shape}")
+            rows.append(arr)
+
+        if not rows:
+            raise ValueError("Empty quantile list returned by pipeline.")
+        return np.stack(rows, axis=0)
+
+    raise TypeError(f"Unsupported quantile output type: {type(q_output)}")
+
+
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
@@ -140,12 +178,14 @@ def main() -> None:
                 f"Model path does not exist locally and local_files_only=true: {cfg.model_path}"
             )
 
-    pipeline = ChronosPipeline.from_pretrained(
+    pipeline = BaseChronosPipeline.from_pretrained(
         model_ref,
         device_map=cfg.device_map,
         local_files_only=cfg.local_files_only,
     )
     LOGGER.info("Chronos loaded successfully.")
+    LOGGER.info("Pipeline class: %s", pipeline.__class__.__name__)
+    model_tag = Path(model_ref).name.replace(" ", "_")
 
     target_cols = [f"{cfg.target_prefix}{h}" for h in cfg.horizons]
     read_cols = ["open_time", "symbol", "close"] + target_cols
@@ -208,19 +248,45 @@ def main() -> None:
 
         pred_q = {q: np.zeros(len(eval_df), dtype=np.float64) for q in cfg.quantiles}
         start_infer = time.perf_counter()
+        use_num_samples = True
         for start in range(0, len(eval_df), cfg.batch_size):
             end = min(start + cfg.batch_size, len(eval_df))
             batch_context = np.stack(eval_df["context_np"].iloc[start:end].to_numpy())
-            tensor = torch.from_numpy(batch_context)
+            # A list of 1D tensors is accepted by both Chronos and Chronos-2 APIs.
+            batch_inputs = [torch.from_numpy(x) for x in batch_context]
             with torch.no_grad():
-                q_tensor, _ = pipeline.predict_quantiles(
-                    tensor,
-                    prediction_length=h,
-                    quantile_levels=cfg.quantiles,
-                    num_samples=cfg.num_samples,
-                )
+                if use_num_samples:
+                    try:
+                        q_output, _ = pipeline.predict_quantiles(
+                            batch_inputs,
+                            prediction_length=h,
+                            quantile_levels=cfg.quantiles,
+                            num_samples=cfg.num_samples,
+                        )
+                    except TypeError as exc:
+                        msg = str(exc)
+                        if "num_samples" not in msg and "Unexpected keyword arguments" not in msg:
+                            raise
+                        use_num_samples = False
+                        LOGGER.warning(
+                            "Pipeline %s does not support num_samples argument. "
+                            "Retrying without num_samples for the rest of this run.",
+                            pipeline.__class__.__name__,
+                        )
+                        q_output, _ = pipeline.predict_quantiles(
+                            batch_inputs,
+                            prediction_length=h,
+                            quantile_levels=cfg.quantiles,
+                        )
+                else:
+                    q_output, _ = pipeline.predict_quantiles(
+                        batch_inputs,
+                        prediction_length=h,
+                        quantile_levels=cfg.quantiles,
+                    )
             # q_tensor shape: [batch, prediction_length, num_quantiles]
-            q_step = q_tensor[:, h - 1, :].detach().cpu().numpy()
+            q_tensor = quantiles_to_numpy(q_output)
+            q_step = q_tensor[:, h - 1, :]
             current_close = eval_df["current_close"].iloc[start:end].to_numpy(dtype=np.float64)
             for q_idx, q in enumerate(cfg.quantiles):
                 pred_price = np.clip(q_step[:, q_idx], 1e-12, None)
@@ -232,7 +298,7 @@ def main() -> None:
         for q in cfg.quantiles:
             y_pred = pred_q[q]
             row: dict[str, Any] = {
-                "model": "chronos_t5_tiny",
+                "model": model_tag,
                 "horizon": h,
                 "quantile": q,
                 "pinball_valid": float(mean_pinball_loss(y_true, y_pred, alpha=q)),
@@ -264,7 +330,7 @@ def main() -> None:
         if q10 is not None and q50 is not None and q90 is not None:
             horizon_summary.append(
                 {
-                    "model": "chronos_t5_tiny",
+                    "model": model_tag,
                     "horizon": h,
                     "interval_80_coverage_valid": float(np.mean((y_true >= q10) & (y_true <= q90))),
                     "interval_80_width_mean_valid": float(np.mean(q90 - q10)),
