@@ -1,0 +1,28 @@
+experiment:
+  name: "chronos2_kaggle_2symbols"
+  seed: 42
+
+model:
+  model_path: "amazon/chronos-2"
+  device_map: "cuda"
+  local_files_only: false
+  context_length: 1024
+  num_samples: 12
+  batch_size: 32
+
+targets:
+  horizons: [1, 2, 5, 10, 30]
+  quantiles: [0.1, 0.5, 0.9]
+  target_prefix: "target_logret_tplus_"
+  include_symbols: ["BTCUSDT", "ETHUSDT"]
+
+runtime:
+  max_points_per_symbol_per_horizon: 4000
+  stride_minutes: 1
+
+paths:
+  processed_dir: "data/processed"
+  raw_dir: "data/raw/binance_1m"
+  metrics_dir: "artifacts/chronos/metrics_kaggle2_chronos2"
+  predictions_dir: "artifacts/chronos/predictions_kaggle2_chronos2"
+  logs_dir: "artifacts/logs"
