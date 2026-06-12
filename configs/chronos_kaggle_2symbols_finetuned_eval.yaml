@@ -1,0 +1,28 @@
+experiment:
+  name: "chronos_t5_tiny_kaggle_2symbols_finetuned_eval"
+  seed: 42
+
+model:
+  model_path: "models/chronos-t5-tiny-ft-kaggle"
+  device_map: "cuda"
+  local_files_only: true
+  context_length: 512
+  num_samples: 20
+  batch_size: 128
+
+targets:
+  horizons: [1, 2, 5, 10, 30]
+  quantiles: [0.1, 0.5, 0.9]
+  target_prefix: "target_logret_tplus_"
+  include_symbols: ["BTCUSDT", "ETHUSDT"]
+
+runtime:
+  max_points_per_symbol_per_horizon: 6000
+  stride_minutes: 1
+
+paths:
+  processed_dir: "data/processed"
+  raw_dir: "data/raw/binance_1m"
+  metrics_dir: "artifacts/chronos/metrics_kaggle2_finetuned"
+  predictions_dir: "artifacts/chronos/predictions_kaggle2_finetuned"
+  logs_dir: "artifacts/logs"
